@@ -31,7 +31,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 class MessageErrorBoundary extends Component<
-  { fallback: ReactNode; messageId: string },
+  { fallback: ReactNode; messageId: string; children: ReactNode },
   { hasError: boolean }
 > {
   state = { hasError: false };

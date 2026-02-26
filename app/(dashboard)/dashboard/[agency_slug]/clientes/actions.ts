@@ -98,20 +98,22 @@ export async function createClientAction(
   const baseSlug = slugify(name);
   const slug = await ensureUniqueSlug(admin, baseSlug, agencyId);
 
-  const { data: newClient, error: clientError } = await admin
+  const insertPayload = {
+    agency_id: agencyId,
+    name,
+    slug,
+    niche: niche || null,
+    contact_email: email,
+    instagram_url: instagram || null,
+    whatsapp: whatsapp || null,
+    status: "active",
+  };
+  const { data, error: clientError } = await admin
     .from("clients")
-    .insert({
-      agency_id: agencyId,
-      name,
-      slug,
-      niche: niche || null,
-      contact_email: email,
-      instagram_url: instagram || null,
-      whatsapp: whatsapp || null,
-      status: "active",
-    })
+    .insert(insertPayload as never)
     .select("id")
     .single();
+  const newClient = data as { id: string } | null;
   if (clientError || !newClient?.id) {
     await admin.auth.admin.deleteUser(newUser.id);
     return {
@@ -120,14 +122,17 @@ export async function createClientAction(
     };
   }
 
-  const { error: profileError } = await admin.from("profiles").insert({
+  const profilePayload = {
     id: newUser.id,
     agency_id: agencyId,
     role: "member",
     full_name: name,
     client_id: newClient.id,
     whatsapp_number: whatsapp || null,
-  });
+  };
+  const { error: profileError } = await admin
+    .from("profiles")
+    .insert(profilePayload as never);
   if (profileError) {
     await admin.from("clients").delete().eq("id", newClient.id);
     await admin.auth.admin.deleteUser(newUser.id);
@@ -214,13 +219,14 @@ export async function deleteClientAction(
 
   const admin = createAdminClient();
 
-  const { data: linkedProfiles } = await admin
+  const { data: linkedData } = await admin
     .from("profiles")
     .select("id")
     .eq("client_id", clientId)
     .eq("agency_id", profile.agency_id);
+  const linkedProfiles = (linkedData ?? []) as Array<{ id: string }>;
 
-  for (const p of linkedProfiles ?? []) {
+  for (const p of linkedProfiles) {
     try {
       await admin.auth.admin.deleteUser(p.id);
     } catch {

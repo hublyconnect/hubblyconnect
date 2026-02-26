@@ -39,6 +39,9 @@ function getWhatsAppAccessToken(
   return process.env.WHATSAPP_ACCESS_TOKEN ?? null;
 }
 
+type ConvRow = { id: string; client_id: string; business_phone_id: string; lead_phone: string };
+type ClientRow = { id: string; agency_id: string; metadata: unknown; whatsapp_business_phone_id: string | null };
+
 export async function sendWhatsAppReply(
   conversationId: string,
   messageBody: string
@@ -58,11 +61,12 @@ export async function sendWhatsAppReply(
 
   const admin = createAdminClient();
 
-  const { data: conversation, error: convError } = await admin
+  const { data: convData, error: convError } = await admin
     .from("whatsapp_conversations")
     .select("id, client_id, business_phone_id, lead_phone")
     .eq("id", conversationId)
     .single();
+  const conversation = convData as ConvRow | null;
 
   if (convError || !conversation) {
     return { ok: false, error: "Conversa não encontrada." };
@@ -74,11 +78,12 @@ export async function sendWhatsAppReply(
     .eq("id", user.id)
     .single();
 
-  const { data: client } = await admin
+  const { data: clientData } = await admin
     .from("clients")
     .select("id, agency_id, metadata, whatsapp_business_phone_id")
     .eq("id", conversation.client_id)
     .single();
+  const client = clientData as ClientRow | null;
 
   if (!profile || !client || client.agency_id !== profile.agency_id) {
     return { ok: false, error: "Sem permissão para esta conversa." };
@@ -146,11 +151,11 @@ export async function sendWhatsAppReply(
     message_body: trimmed,
     wa_message_id: waMessageId,
     status: "sent",
-  });
+  } as never);
 
   await admin
     .from("whatsapp_conversations")
-    .update({ last_message_at: new Date().toISOString() })
+    .update({ last_message_at: new Date().toISOString() } as never)
     .eq("id", conversationId);
 
   return { ok: true, message: "Mensagem enviada." };
@@ -189,11 +194,12 @@ export async function sendWhatsAppMedia(
 
   const admin = createAdminClient();
 
-  const { data: conversation, error: convError } = await admin
+  const { data: convData, error: convError } = await admin
     .from("whatsapp_conversations")
     .select("id, client_id, business_phone_id, lead_phone")
     .eq("id", conversationId)
     .single();
+  const conversation = convData as ConvRow | null;
 
   if (convError || !conversation) {
     return { ok: false, error: "Conversa não encontrada." };
@@ -205,11 +211,12 @@ export async function sendWhatsAppMedia(
     .eq("id", user.id)
     .single();
 
-  const { data: client } = await admin
+  const { data: clientData } = await admin
     .from("clients")
     .select("id, agency_id, metadata, whatsapp_business_phone_id")
     .eq("id", conversation.client_id)
     .single();
+  const client = clientData as ClientRow | null;
 
   if (!profile || !client || client.agency_id !== profile.agency_id) {
     return { ok: false, error: "Sem permissão para esta conversa." };
@@ -300,11 +307,11 @@ export async function sendWhatsAppMedia(
     status: "sent",
     media_url: mediaUrl,
     media_type: mediaType,
-  });
+  } as never);
 
   await admin
     .from("whatsapp_conversations")
-    .update({ last_message_at: new Date().toISOString() })
+    .update({ last_message_at: new Date().toISOString() } as never)
     .eq("id", conversationId);
 
   return { ok: true, message: "Mídia enviada." };

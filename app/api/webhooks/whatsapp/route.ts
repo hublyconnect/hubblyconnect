@@ -13,8 +13,7 @@ export async function GET(request: NextRequest) {
   const VERIFY_TOKEN = "hubly_wa_secret_2026";
 
   if (mode === "subscribe" && token === VERIFY_TOKEN) {
-    console.log("WEBHOOK_VERIFIED");
-    return new NextResponse(challenge, {
+    return new NextResponse(String(challenge ?? ""), {
       status: 200,
       headers: { "Content-Type": "text/plain" },
     });

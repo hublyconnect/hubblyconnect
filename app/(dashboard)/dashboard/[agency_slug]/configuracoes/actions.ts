@@ -84,12 +84,15 @@ export async function inviteMemberAction(
   const newUser = createData?.user;
   if (!newUser) return { ok: false, error: "Falha ao criar usuário." };
 
-  const { error: profileError } = await admin.from("profiles").insert({
+  const profilePayload = {
     id: newUser.id,
     agency_id: profile.agency_id,
     role,
     full_name: name,
-  });
+  };
+  const { error: profileError } = await admin
+    .from("profiles")
+    .insert(profilePayload as never);
   if (profileError) {
     await admin.auth.admin.deleteUser(newUser.id);
     return { ok: false, error: profileError.message };

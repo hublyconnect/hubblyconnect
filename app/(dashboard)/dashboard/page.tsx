@@ -120,11 +120,12 @@ export default async function DashboardRootPage() {
   // Clients always go to their portal, never to the agency dashboard
   if (isClient && profile.client_id) {
     const admin = createAdminClient();
-    const { data: client } = await admin
+    const { data: clientData } = await admin
       .from("clients")
       .select("id, slug")
       .eq("id", profile.client_id)
       .single();
+    const client = clientData as { id: string; slug: string | null } | null;
     if (client) {
       const portalSlug = client.slug ?? client.id;
       redirect(`/portal/${portalSlug}`);
@@ -134,12 +135,13 @@ export default async function DashboardRootPage() {
   let agencyId = profile.agency_id ?? null;
   if (!agencyId) {
     const admin = createAdminClient();
-    const { data: firstAgency } = await admin
+    const { data: firstAgencyData } = await admin
       .from("agencies")
       .select("id, slug")
       .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
+    const firstAgency = firstAgencyData as { id: string; slug: string } | null;
     if (firstAgency?.id) {
       await admin
         .from("profiles")
@@ -150,7 +152,7 @@ export default async function DashboardRootPage() {
             role: profile?.role ?? "admin",
             full_name: profile?.full_name ?? null,
             updated_at: new Date().toISOString(),
-          },
+          } as never,
           { onConflict: "id" }
         );
       agencyId = firstAgency.id;
@@ -160,11 +162,12 @@ export default async function DashboardRootPage() {
     redirect("/login?error=no_agency&callbackUrl=/dashboard");
   }
   const supabaseForAgency = profile ? supabase : createAdminClient();
-  const { data: agency } = await supabaseForAgency
+  const { data: agencyData } = await supabaseForAgency
     .from("agencies")
     .select("slug")
     .eq("id", agencyId)
     .single();
+  const agency = agencyData as { slug: string } | null;
   if (!agency?.slug) {
     redirect("/login?error=no_agency&callbackUrl=/dashboard");
   }

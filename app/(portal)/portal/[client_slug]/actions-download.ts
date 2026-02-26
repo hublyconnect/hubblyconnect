@@ -9,18 +9,20 @@ export async function getDownloadUrlAction(
   fileUrl: string
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   const supabase = createAdminClient();
-  const { data: client, error: clientError } = await supabase
+  const { data: clientData, error: clientError } = await supabase
     .from("clients")
     .select("id")
     .eq("slug", clientSlug)
     .maybeSingle();
+  const client = clientData as { id: string } | null;
   if (clientError || !client) return { ok: false, error: "Cliente não encontrado." };
 
-  const { data: asset, error: assetError } = await supabase
+  const { data: assetData, error: assetError } = await supabase
     .from("creative_assets")
     .select("id, client_id, file_url")
     .eq("id", assetId)
     .single();
+  const asset = assetData as { id: string; client_id: string; file_url: string } | null;
   if (assetError || !asset || asset.client_id !== client.id) {
     return { ok: false, error: "Criativo não encontrado." };
   }
