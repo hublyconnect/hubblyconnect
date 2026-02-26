@@ -122,6 +122,7 @@ export default function CrmPage({
     data: messages,
     isLoading: msgLoading,
     isError: msgError,
+    error: msgErrorDetail,
     refetch: refetchMessages,
   } = useCrmMessages(selectedId);
 
@@ -131,6 +132,17 @@ export default function CrmPage({
   );
 
   const displayMessages = selectedId ? optimisticMessages : [];
+
+  useEffect(() => {
+    if (!msgError || !msgErrorDetail) return;
+    const message =
+      msgErrorDetail instanceof Error ? msgErrorDetail.message : String(msgErrorDetail);
+    if (message.toLowerCase().includes("unsupported post request")) {
+      toast.error("Erro de permissão na Meta");
+      return;
+    }
+    toast.error("Erro ao carregar mensagens");
+  }, [msgError, msgErrorDetail]);
 
   const filtered = (conversations ?? []).filter((c) => {
     const q = search.toLowerCase();

@@ -103,7 +103,7 @@ export async function sendWhatsAppReply(
 
   const normalizedPhone = normalizePhoneNumber(conversation.lead_phone);
   // eslint-disable-next-line no-console
-  console.log("SENDING WITH ID:", sendPhoneId);
+  console.log("Tentando enviar com ID:", sendPhoneId);
   // eslint-disable-next-line no-console
   console.log("Normalized Number:", normalizedPhone);
 
@@ -246,7 +246,7 @@ export async function sendWhatsAppMedia(
   const mediaUrl = urlData?.publicUrl ?? "";
 
   const normalizedPhone = normalizePhoneNumber(conversation.lead_phone);
-  console.log("SENDING WITH ID:", sendPhoneId);
+  console.log("Tentando enviar com ID:", sendPhoneId);
 
   const url = `${GRAPH_BASE}/${sendPhoneId}/messages`;
 
