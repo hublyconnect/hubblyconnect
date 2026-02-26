@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
     if (wabaError) {
       console.warn("[WA Webhook] Erro ao buscar cliente por WABA:", wabaError.message);
     }
-    let client = (clientsByWaba?.[0] as { id: string; whatsapp_business_phone_id?: string | null } | null) ?? null;
+    let client = (clientsByWaba?.[0] as unknown as { id: string; whatsapp_business_phone_id?: string | null }) ?? null;
 
     if (!client) {
       const { data: clientsByPhone, error: phoneError } = await supabase
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
       if (phoneError) {
         console.warn("[WA Webhook] Erro ao buscar cliente por phone ID:", phoneError.message);
       }
-      client = (clientsByPhone?.[0] as { id: string; whatsapp_business_phone_id?: string | null } | null) ?? null;
+      client = (clientsByPhone?.[0] as unknown as { id: string; whatsapp_business_phone_id?: string | null }) ?? null;
     }
 
     if (!client?.id) {
