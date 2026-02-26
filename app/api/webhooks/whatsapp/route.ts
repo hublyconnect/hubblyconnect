@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (statuses.length > 0) {
-      console.log("[WA Webhook] Statuses recebidos:", statuses);
+      console.log("Erro detalhado:", JSON.stringify(statuses[0].errors, null, 2));
     }
 
     if (!value || !msg) {
