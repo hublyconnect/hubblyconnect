@@ -106,6 +106,10 @@ export async function sendWhatsAppReply(
   console.log("Tentando enviar com ID:", sendPhoneId);
   // eslint-disable-next-line no-console
   console.log("Normalized Number:", normalizedPhone);
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[WA] Aviso: envio de texto sem template. Se o número estiver fora da janela de 24h, a Meta pode bloquear."
+  );
 
   const url = `${GRAPH_BASE}/${sendPhoneId}/messages`;
   const body = {
@@ -247,6 +251,10 @@ export async function sendWhatsAppMedia(
 
   const normalizedPhone = normalizePhoneNumber(conversation.lead_phone);
   console.log("Tentando enviar com ID:", sendPhoneId);
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[WA] Aviso: envio de mídia sem template. Se o número estiver fora da janela de 24h, a Meta pode bloquear."
+  );
 
   const url = `${GRAPH_BASE}/${sendPhoneId}/messages`;
 

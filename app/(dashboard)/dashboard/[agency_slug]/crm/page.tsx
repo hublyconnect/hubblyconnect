@@ -126,6 +126,9 @@ export default function CrmPage({
     refetch: refetchMessages,
   } = useCrmMessages(selectedId);
 
+  const isLoadingConversations = convLoading;
+  const isLoadingMessages = msgLoading;
+
   const [optimisticMessages, addOptimisticMessage] = useOptimistic(
     messages ?? [],
     (state, newMsg: CrmMessage) => [...state, newMsg]
@@ -339,7 +342,7 @@ export default function CrmPage({
                   Tentar novamente
                 </Button>
               </div>
-            ) : convLoading ? (
+            ) : isLoadingConversations ? (
               Array.from({ length: 6 }).map((_, i) => (
                 <div key={i} className="flex items-center gap-3 p-3">
                   <Skeleton className="size-[49px] rounded-full" />
@@ -458,7 +461,7 @@ export default function CrmPage({
                       Tentar novamente
                     </Button>
                   </div>
-                ) : msgLoading ? (
+                ) : isLoadingMessages ? (
                   <div className="flex justify-center py-8">
                     <Loader2 className="size-6 animate-spin text-zinc-400" />
                   </div>

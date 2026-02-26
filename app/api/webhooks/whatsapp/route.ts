@@ -32,16 +32,22 @@ export async function POST(request: NextRequest) {
     const change = entry?.changes?.[0];
     const value = change?.value;
     const msg = value?.messages?.[0];
+    const statuses = Array.isArray(value?.statuses) ? value.statuses : [];
 
     console.log("[WA Webhook] Payload recebido:", {
       hasEntry: Boolean(entry),
       hasChange: Boolean(change),
       hasValue: Boolean(value),
       hasMessage: Boolean(msg),
+      hasStatuses: statuses.length > 0,
       messageId: msg?.id,
       messageType: msg?.type,
       phoneNumberId: value?.metadata?.phone_number_id,
     });
+
+    if (statuses.length > 0) {
+      console.log("[WA Webhook] Statuses recebidos:", statuses);
+    }
 
     if (!value || !msg) {
       return NextResponse.json({ success: true }, { status: 200 });
