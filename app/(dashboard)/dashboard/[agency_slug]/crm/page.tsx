@@ -140,8 +140,8 @@ export default function CrmPage({
     return name.includes(q) || phone.includes(q.replace(/\D/g, "")) || snippet.includes(q);
   });
 
-  const selected = filtered.find((c) => c.id === selectedId);
-  const showChat = selected && selectedId;
+  const selected = (conversations ?? []).find((c) => c.id === selectedId);
+  const showChat = Boolean(selectedId && selected);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
