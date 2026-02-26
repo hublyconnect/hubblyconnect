@@ -17,7 +17,7 @@ export function useClientProgress(agencyId: string | null) {
         .from("clients")
         .select("id")
         .eq("agency_id", agencyId);
-      const clientIds = (clients ?? []).map((c) => c.id);
+      const clientIds = ((clients ?? []) as { id: string }[]).map((c) => c.id);
       if (clientIds.length === 0) return {};
 
       const { data: assets } = await supabase

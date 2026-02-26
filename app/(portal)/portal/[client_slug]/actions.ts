@@ -31,25 +31,27 @@ export async function updateAssetStatusFromPortalAction(
     return { ok: false, error: "Status inválido." };
   }
   const supabase = createAdminClient();
-  const { data: client, error: clientError } = await supabase
+  const { data: clientData, error: clientError } = await supabase
     .from("clients")
     .select("id")
     .eq("slug", clientSlug)
     .maybeSingle();
+  const client = clientData as { id: string } | null;
   if (clientError || !client) return { ok: false, error: "Cliente não encontrado." };
 
-  const { data: asset, error: assetError } = await supabase
+  const { data: assetData, error: assetError } = await supabase
     .from("creative_assets")
     .select("id, client_id")
     .eq("id", assetId)
     .single();
+  const asset = assetData as { id: string; client_id: string } | null;
   if (assetError || !asset || asset.client_id !== client.id) {
     return { ok: false, error: "Criativo não encontrado ou não pertence a este cliente." };
   }
 
   const { error: updateError } = await supabase
     .from("creative_assets")
-    .update({ status, updated_at: new Date().toISOString() })
+    .update({ status, updated_at: new Date().toISOString() } as never)
     .eq("id", assetId);
   if (updateError) return { ok: false, error: updateError.message };
   return { ok: true };
@@ -69,18 +71,20 @@ export async function submitAssetRevisionAction(
 
   const supabase = createAdminClient();
 
-  const { data: client, error: clientError } = await supabase
+  const { data: clientData, error: clientError } = await supabase
     .from("clients")
     .select("id")
     .eq("slug", clientSlug)
     .maybeSingle();
+  const client = clientData as { id: string } | null;
   if (clientError || !client) return { ok: false, error: "Cliente não encontrado." };
 
-  const { data: asset, error: assetError } = await supabase
+  const { data: assetData, error: assetError } = await supabase
     .from("creative_assets")
     .select("id, client_id")
     .eq("id", assetId)
     .single();
+  const asset = assetData as { id: string; client_id: string } | null;
   if (assetError || !asset || asset.client_id !== client.id) {
     return { ok: false, error: "Criativo não encontrado ou não pertence a este cliente." };
   }
@@ -90,7 +94,7 @@ export async function submitAssetRevisionAction(
     content: trimmed,
     sender_type: "client",
     author_id: null,
-  });
+  } as never);
   if (insertError) return { ok: false, error: insertError.message };
 
   const { error: updateError } = await supabase
@@ -98,7 +102,7 @@ export async function submitAssetRevisionAction(
     .update({
       status: "revision_requested",
       updated_at: new Date().toISOString(),
-    })
+    } as never)
     .eq("id", assetId);
   if (updateError) return { ok: false, error: updateError.message };
 
@@ -114,18 +118,20 @@ export async function uploadCommentAttachmentAction(
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   const supabase = createAdminClient();
 
-  const { data: client, error: clientError } = await supabase
+  const { data: clientData, error: clientError } = await supabase
     .from("clients")
     .select("id")
     .eq("slug", clientSlug)
     .maybeSingle();
+  const client = clientData as { id: string } | null;
   if (clientError || !client) return { ok: false, error: "Cliente não encontrado." };
 
-  const { data: asset, error: assetError } = await supabase
+  const { data: assetData, error: assetError } = await supabase
     .from("creative_assets")
     .select("id, client_id")
     .eq("id", assetId)
     .single();
+  const asset = assetData as { id: string; client_id: string } | null;
   if (assetError || !asset || asset.client_id !== client.id) {
     return { ok: false, error: "Criativo não encontrado." };
   }
@@ -170,18 +176,20 @@ export async function getAssetCommentsAction(
   assetId: string
 ): Promise<{ ok: true; comments: PortalComment[] } | { ok: false; error: string }> {
   const supabase = createAdminClient();
-  const { data: client, error: clientError } = await supabase
+  const { data: clientData, error: clientError } = await supabase
     .from("clients")
     .select("id")
     .eq("slug", clientSlug)
     .maybeSingle();
+  const client = clientData as { id: string } | null;
   if (clientError || !client) return { ok: false, error: "Cliente não encontrado." };
 
-  const { data: asset, error: assetError } = await supabase
+  const { data: assetData, error: assetError } = await supabase
     .from("creative_assets")
     .select("id, client_id")
     .eq("id", assetId)
     .single();
+  const asset = assetData as { id: string; client_id: string } | null;
   if (assetError || !asset || asset.client_id !== client.id) {
     return { ok: false, error: "Criativo não encontrado." };
   }
@@ -214,18 +222,20 @@ export async function submitCommentWithAttachmentAction(
 ): Promise<SubmitAttachmentResult> {
   const supabase = createAdminClient();
 
-  const { data: client, error: clientError } = await supabase
+  const { data: clientData, error: clientError } = await supabase
     .from("clients")
     .select("id")
     .eq("slug", clientSlug)
     .maybeSingle();
+  const client = clientData as { id: string } | null;
   if (clientError || !client) return { ok: false, error: "Cliente não encontrado." };
 
-  const { data: asset, error: assetError } = await supabase
+  const { data: assetData, error: assetError } = await supabase
     .from("creative_assets")
     .select("id, client_id")
     .eq("id", assetId)
     .single();
+  const asset = assetData as { id: string; client_id: string } | null;
   if (assetError || !asset || asset.client_id !== client.id) {
     return { ok: false, error: "Criativo não encontrado ou não pertence a este cliente." };
   }
@@ -282,7 +292,7 @@ export async function submitCommentWithAttachmentAction(
       sender_type: "client",
       author_id: null,
       file_url: fileUrl,
-    })
+    } as never)
     .select("id, content, sender_type, created_at, file_url")
     .single();
   if (insertError) return { ok: false, error: insertError.message };
@@ -293,7 +303,7 @@ export async function submitCommentWithAttachmentAction(
     .update({
       status: "revision_requested",
       updated_at: new Date().toISOString(),
-    })
+    } as never)
     .eq("id", assetId);
   if (updateError) return { ok: false, error: updateError.message };
 
@@ -321,17 +331,19 @@ export async function completeOnboardingItemWithFileAction(
   const file = formData.get("file") as File | null;
   if (!file?.size) return { ok: false, error: "Selecione um arquivo." };
   const supabase = createAdminClient();
-  const { data: client, error: clientError } = await supabase
+  const { data: clientData, error: clientError } = await supabase
     .from("clients")
     .select("id")
     .eq("slug", clientSlug)
     .maybeSingle();
+  const client = clientData as { id: string } | null;
   if (clientError || !client) return { ok: false, error: "Cliente não encontrado." };
-  const { data: item, error: itemError } = await supabase
+  const { data: itemData, error: itemError } = await supabase
     .from("client_onboarding_items")
     .select("id, client_id")
     .eq("id", itemId)
     .single();
+  const item = itemData as { id: string; client_id: string } | null;
   if (itemError || !item || item.client_id !== client.id) {
     return { ok: false, error: "Item não encontrado." };
   }
@@ -350,7 +362,7 @@ export async function completeOnboardingItemWithFileAction(
   if (uploadError) return { ok: false, error: uploadError.message };
   const { error: updateError } = await supabase
     .from("client_onboarding_items")
-    .update({ completed: true })
+    .update({ completed: true } as never)
     .eq("id", itemId);
   if (updateError) return { ok: false, error: updateError.message };
   return { ok: true };
@@ -366,18 +378,20 @@ export async function completeOnboardingItemWithCredentialsAction(
 ): Promise<CompleteOnboardingItemWithCredentialsResult> {
   try {
     const supabase = createAdminClient();
-    const { data: client, error: clientError } = await supabase
+    const { data: clientData, error: clientError } = await supabase
       .from("clients")
       .select("id")
       .eq("slug", clientSlug)
       .maybeSingle();
+    const client = clientData as { id: string } | null;
     if (clientError || !client) return { ok: false, error: "Cliente não encontrado." };
 
-    const { data: item, error: itemError } = await supabase
+    const { data: itemData, error: itemError } = await supabase
       .from("client_onboarding_items")
       .select("id, client_id")
       .eq("id", itemId)
       .single();
+    const item = itemData as { id: string; client_id: string } | null;
     if (itemError || !item || item.client_id !== client.id) {
       return { ok: false, error: "Item não encontrado." };
     }
@@ -390,7 +404,7 @@ export async function completeOnboardingItemWithCredentialsAction(
 
     const { error: updateError } = await supabase
       .from("client_onboarding_items")
-      .update({ completed: true, metadata })
+      .update({ completed: true, metadata } as never)
       .eq("id", itemId);
     if (updateError) return { ok: false, error: updateError.message };
     revalidatePath(`/portal/${clientSlug}`);

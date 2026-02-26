@@ -67,10 +67,11 @@ export function useUploadCreativeAsset(clientId: string | null) {
         const uploadPromise = supabase.storage
           .from(BUCKET)
           .upload(uploadPath, file, { upsert: false });
-        const { error: uploadError } = await withTimeout(
+        const result = (await withTimeout(
           uploadPromise,
           STORAGE_UPLOAD_TIMEOUT_MS
-        );
+        )) as { data: unknown; error: Error | null };
+        const { error: uploadError } = result;
         if (uploadError) throw uploadError;
       };
 

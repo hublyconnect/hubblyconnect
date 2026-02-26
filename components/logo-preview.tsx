@@ -42,7 +42,7 @@ export function LogoPreview({
         setPath(null);
         return;
       }
-      const first = (data ?? []).find((f) => f.name && isImage(f.name));
+      const first = (data ?? []).find((f: { name?: string }) => f.name && isImage(f.name));
       if (!first?.name) {
         setUrl(null);
         setPath(null);

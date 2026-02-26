@@ -177,7 +177,8 @@ export async function getFacebookAdsReportAction(
     const clientQuery = byId
       ? supabase.from("clients").select("metadata").eq("id", clientSlug)
       : supabase.from("clients").select("metadata").eq("slug", clientSlug);
-    const { data: client, error: clientError } = await clientQuery.maybeSingle();
+    const { data: clientData, error: clientError } = await clientQuery.maybeSingle();
+    const client = clientData as { metadata?: Record<string, unknown> } | null;
 
     if (clientError || !client) {
       return { ok: false, error: "client_not_found", message: "Cliente não encontrado." };

@@ -69,8 +69,8 @@ export function FileUpload({
       }
 
       const items: FileItem[] = (data ?? [])
-        .filter((f) => f.name && !f.name.startsWith("."))
-        .map((f) => ({
+        .filter((f: { name?: string }) => f.name && !f.name.startsWith("."))
+        .map((f: { name: string; id?: string }) => ({
           name: f.name,
           path: `${folder}/${f.name}`,
           id: f.id ?? f.name,

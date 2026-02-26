@@ -23,11 +23,12 @@ export async function GET(
 
   const supabase = createAdminClient();
 
-  const { data: link, error: linkError } = await supabase
+  const { data: linkData, error: linkError } = await supabase
     .from("tracking_links")
     .select("id, client_id, destination_url")
     .eq("slug", slug)
     .single();
+  const link = linkData as { id: string; client_id: string; destination_url: string } | null;
 
   if (linkError || !link) {
     return NextResponse.redirect(FALLBACK_URL, 302);
@@ -63,7 +64,7 @@ export async function GET(
     device_type: inferDeviceType(userAgent),
     is_bot: isBot,
     status: "clicked",
-  });
+  } as never);
 
   return NextResponse.redirect(link.destination_url, 302);
 }

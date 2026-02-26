@@ -93,11 +93,12 @@ export async function GET(request: NextRequest) {
     }
 
     const supabase = createAdminClient();
-    const { data: agency, error: agencyError } = await supabase
+    const { data: agencyData, error: agencyError } = await supabase
       .from("agencies")
       .select("id")
       .eq("slug", agencySlug)
       .single();
+    const agency = agencyData as { id: string } | null;
 
     if (agencyError || !agency?.id) {
       console.error("[Facebook OAuth] Agência não encontrada pelo slug.", { slug: agencySlug, error: agencyError?.message });
@@ -130,7 +131,7 @@ export async function GET(request: NextRequest) {
           instagram_token_expires_at: tokenExpiresAt,
           instagram_handle: instagramHandle,
           instagram_avatar_url: instagramAvatarUrl,
-        })
+        } as never)
         .eq("id", stateClientId)
         .eq("agency_id", agency.id);
 
@@ -148,7 +149,7 @@ export async function GET(request: NextRequest) {
             access_token: longLivedToken,
             token_expires_at: tokenExpiresAt,
             updated_at: new Date().toISOString(),
-          },
+          } as never,
           { onConflict: "agency_id,provider" }
         );
 
