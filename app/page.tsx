@@ -645,22 +645,29 @@ export default function Home() {
               <h4 className="font-heading text-sm font-semibold text-white">Legal</h4>
               <ul className="mt-3 space-y-2 text-sm text-white/90">
                 <li>
-                  <Link href="#" className="transition-colors hover:text-white">
+                  <Link href="/privacidade" className="transition-colors hover:text-white">
                     Privacidade
                   </Link>
                 </li>
                 <li>
-                  <Link href="#" className="transition-colors hover:text-white">
-                    Termos de uso
+                  <Link href="/termos" className="transition-colors hover:text-white">
+                    Termos de Uso
                   </Link>
                 </li>
               </ul>
             </div>
           </div>
-          <div className="mt-10 flex flex-col items-center justify-between gap-4 border-t border-white/20 pt-8 sm:flex-row">
-            <p className="text-sm text-white/90">
-              © {new Date().getFullYear()} Hubly Connect. Todos os direitos reservados.
-            </p>
+          <div className="mt-10 flex flex-col items-center gap-4 border-t border-white/20 pt-8 sm:flex-row sm:justify-between">
+            <div className="flex flex-col items-center gap-2 sm:flex-row sm:gap-4">
+              <div className="flex items-center gap-2 text-sm text-white/80">
+                <Link href="/privacidade" className="transition-colors hover:text-white">Privacidade</Link>
+                <span aria-hidden>·</span>
+                <Link href="/termos" className="transition-colors hover:text-white">Termos de Uso</Link>
+              </div>
+              <p className="text-sm text-white/90">
+                © {new Date().getFullYear()} Hubly Connect. Todos os direitos reservados.
+              </p>
+            </div>
             <div className="flex items-center gap-4">
               <a
                 href="#"
