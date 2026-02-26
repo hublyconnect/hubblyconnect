@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useOptimistic, Component, type ReactNode } from "react";
+import React, { useMemo, useState, useRef, useEffect, useOptimistic, Component, type ReactNode } from "react";
 import { useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,13 +16,14 @@ import {
   CheckCheck,
   Paperclip,
   Mic,
-  Square,
+  Trash2,
   FileText,
   Smile,
   Play,
   Pause,
   User,
 } from "lucide-react";
+import EmojiPicker from "emoji-picker-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCrmConversations } from "@/hooks/use-crm-conversations";
 import { useCrmMessages, type CrmMessage } from "@/hooks/use-crm-messages";
@@ -64,7 +65,9 @@ function formatPhone(phone: string): string {
 }
 
 function formatMessageTime(iso: string): string {
+  if (!iso) return "--";
   const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "--";
   const now = new Date();
   const diff = now.getTime() - d.getTime();
   if (diff < 86400000) return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -73,7 +76,10 @@ function formatMessageTime(iso: string): string {
 }
 
 function formatBubbleTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString("pt-BR", {
+  if (!iso) return "--:--";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "--:--";
+  return d.toLocaleTimeString("pt-BR", {
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -89,6 +95,29 @@ function getInitial(nameOrPhone: string): string {
   return n[0].toUpperCase();
 }
 
+function getAvatarColor(seed: string): string {
+  const base = seed || "hubly";
+  let hash = 0;
+  for (let i = 0; i < base.length; i += 1) {
+    hash = base.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue} 60% 55%)`;
+}
+
+function getDateLabel(iso: string): string {
+  if (!iso) return "Data desconhecida";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Data desconhecida";
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const messageDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.round((today.getTime() - messageDay.getTime()) / 86400000);
+  if (diffDays === 0) return "Hoje";
+  if (diffDays === 1) return "Ontem";
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "long" });
+}
+
 export default function CrmPage({
   params,
 }: {
@@ -101,10 +130,21 @@ export default function CrmPage({
   const [pending, startTransition] = useTransition();
   const [mediaPending, setMediaPending] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [recordDuration, setRecordDuration] = useState(0);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const [pendingAudio, setPendingAudio] = useState<{ file: File; url: string; duration: number } | null>(null);
+  const [isEmojiOpen, setIsEmojiOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const recordStartRef = useRef<number | null>(null);
+  const recordTimerRef = useRef<number | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const shouldSendAfterRecordRef = useRef(false);
+  const discardOnStopRef = useRef(false);
   const queryClient = useQueryClient();
 
   React.useEffect(() => {
@@ -157,10 +197,59 @@ export default function CrmPage({
 
   const selected = (conversations ?? []).find((c) => c.id === selectedId);
   const showChat = Boolean(selectedId && selected);
+  const leadInitial = selected
+    ? getInitial(selected.lead_name || formatPhone(selected.lead_phone || ""))
+    : "?";
+
+  const renderedMessages = useMemo(() => {
+    let lastDateKey = "";
+    const nodes: React.ReactNode[] = [];
+    displayMessages.forEach((msg) => {
+      const createdAt = msg.created_at ?? "";
+      const dateKey = createdAt ? createdAt.slice(0, 10) : "unknown";
+      if (dateKey !== lastDateKey) {
+        lastDateKey = dateKey;
+        nodes.push(
+          <div key={`sep-${dateKey}-${msg.id}`} className="flex justify-center py-3">
+            <span className="rounded-full bg-[#dfe5e7] px-3 py-1 text-xs text-[#54656f] shadow-sm">
+              {getDateLabel(createdAt)}
+            </span>
+          </div>
+        );
+      }
+      nodes.push(
+        <MessageErrorBoundary
+          key={msg.id}
+          messageId={msg.id}
+          fallback={
+            <div className="flex w-full justify-center py-2">
+              <span className="rounded bg-zinc-200 px-3 py-1.5 text-xs text-zinc-500">
+                Mensagem indisponível
+              </span>
+            </div>
+          }
+        >
+          <MessageBubble message={msg} leadInitial={leadInitial} />
+        </MessageErrorBoundary>
+      );
+    });
+    return nodes;
+  }, [displayMessages, leadInitial]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [displayMessages]);
+
+  useEffect(() => {
+    setPendingAudio(null);
+    setRecordDuration(0);
+    setAudioLevel(0);
+    shouldSendAfterRecordRef.current = false;
+    discardOnStopRef.current = false;
+    if (mediaRecorderRef.current?.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+  }, [selectedId]);
 
   const handleSend = () => {
     const body = messageInput.trim();
@@ -232,10 +321,55 @@ export default function CrmPage({
     });
   };
 
+  const sendAudioFile = async (file: File, url: string, duration: number) => {
+    if (!selectedId) return;
+    const tempMessage: CrmMessage = {
+      id: `opt-${Date.now()}`,
+      conversation_id: selectedId,
+      sender_type: "agent",
+      message_body: "(áudio)",
+      wa_message_id: null,
+      media_url: url,
+      media_type: "audio",
+      created_at: new Date().toISOString(),
+    };
+    startTransition(async () => {
+      addOptimisticMessage(tempMessage);
+      setMediaPending(true);
+      try {
+        const fd = new FormData();
+        fd.set("file", file);
+        fd.set("mediaType", "audio");
+        fd.set("duration", String(duration));
+        const result = await sendWhatsAppMedia(selectedId, fd);
+        if (result.ok) {
+          queryClient.invalidateQueries({ queryKey: ["crm-messages", selectedId] });
+          queryClient.invalidateQueries({ queryKey: ["crm-conversations"] });
+          toast.success(result.message);
+        } else {
+          toast.error(result.error);
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Erro ao enviar áudio.");
+      } finally {
+        setMediaPending(false);
+        setPendingAudio(null);
+      }
+    });
+  };
+
+  const stopRecording = (mode: "discard" | "send" | "keep") => {
+    if (mode === "send") shouldSendAfterRecordRef.current = true;
+    if (mode === "discard") discardOnStopRef.current = true;
+    if (mediaRecorderRef.current?.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+  };
+
   const handleVoiceRecord = async () => {
     if (!selectedId) return;
     if (isRecording) {
-      mediaRecorderRef.current?.stop();
+      stopRecording("keep");
       return;
     }
     try {
@@ -250,48 +384,75 @@ export default function CrmPage({
       recorder.ondataavailable = (e) => {
         if (e.data.size) chunksRef.current.push(e.data);
       };
+      const audioContext = new AudioContext();
+      const analyser = audioContext.createAnalyser();
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+      analyser.fftSize = 256;
+      audioContextRef.current = audioContext;
+      analyserRef.current = analyser;
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const tick = () => {
+        if (!analyserRef.current) return;
+        analyserRef.current.getByteTimeDomainData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i += 1) {
+          const v = (dataArray[i] - 128) / 128;
+          sum += v * v;
+        }
+        const rms = Math.sqrt(sum / dataArray.length);
+        setAudioLevel(rms);
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      tick();
+
       recorder.onstop = () => {
         setIsRecording(false);
         stream.getTracks().forEach((t) => t.stop());
+        if (recordTimerRef.current) {
+          window.clearInterval(recordTimerRef.current);
+          recordTimerRef.current = null;
+        }
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+        analyserRef.current?.disconnect();
+        analyserRef.current = null;
+        audioContextRef.current?.close();
+        audioContextRef.current = null;
         const blob = new Blob(chunksRef.current, { type: mimeType });
         const ext = mimeType.includes("ogg") ? "ogg" : "webm";
         const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: mimeType });
         const blobUrl = URL.createObjectURL(blob);
-        const tempMessage: CrmMessage = {
-          id: `opt-${Date.now()}`,
-          conversation_id: selectedId!,
-          sender_type: "agent",
-          message_body: "(áudio)",
-          wa_message_id: null,
-          media_url: blobUrl,
-          media_type: "audio",
-          created_at: new Date().toISOString(),
-        };
-        startTransition(async () => {
-          addOptimisticMessage(tempMessage);
-          setMediaPending(true);
-          try {
-            const fd = new FormData();
-            fd.set("file", file);
-            fd.set("mediaType", "audio");
-            const result = await sendWhatsAppMedia(selectedId!, fd);
-            if (result.ok) {
-              queryClient.invalidateQueries({ queryKey: ["crm-messages", selectedId] });
-              queryClient.invalidateQueries({ queryKey: ["crm-conversations"] });
-              toast.success(result.message);
-            } else {
-              toast.error(result.error);
-            }
-          } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Erro ao enviar áudio.");
-          } finally {
-            setMediaPending(false);
-          }
-        });
+        const duration = recordDuration;
+        setRecordDuration(0);
+        setAudioLevel(0);
+
+        if (discardOnStopRef.current) {
+          discardOnStopRef.current = false;
+          shouldSendAfterRecordRef.current = false;
+          URL.revokeObjectURL(blobUrl);
+          setPendingAudio(null);
+          return;
+        }
+
+        setPendingAudio({ file, url: blobUrl, duration });
+
+        if (shouldSendAfterRecordRef.current) {
+          shouldSendAfterRecordRef.current = false;
+          sendAudioFile(file, blobUrl, duration);
+        }
       };
       mediaRecorderRef.current = recorder;
       recorder.start();
       setIsRecording(true);
+      setPendingAudio(null);
+      recordStartRef.current = Date.now();
+      setRecordDuration(0);
+      if (recordTimerRef.current) window.clearInterval(recordTimerRef.current);
+      recordTimerRef.current = window.setInterval(() => {
+        if (!recordStartRef.current) return;
+        setRecordDuration(Math.floor((Date.now() - recordStartRef.current) / 1000));
+      }, 250);
     } catch (err) {
       toast.error("Microfone indisponível.");
     }
@@ -302,6 +463,10 @@ export default function CrmPage({
     const r = mediaRecorderRef.current;
     return () => {
       if (r?.state === "recording") r.stop();
+      if (recordTimerRef.current) {
+        window.clearInterval(recordTimerRef.current);
+        recordTimerRef.current = null;
+      }
     };
   }, [isRecording]);
 
@@ -363,7 +528,11 @@ export default function CrmPage({
                 </p>
               </div>
             ) : (
-              filtered.map((conv) => (
+              filtered.map((conv) => {
+                const leadName = conv.lead_name || formatPhone(conv.lead_phone || "");
+                const avatarUrl = (conv as { lead_avatar_url?: string | null }).lead_avatar_url ?? null;
+                const avatarColor = getAvatarColor(leadName || "Lead");
+                return (
                 <button
                   key={conv.id}
                   type="button"
@@ -373,21 +542,28 @@ export default function CrmPage({
                     selectedId === conv.id && "bg-[#f0f2f5]"
                   )}
                 >
-                  <div className="flex size-[49px] shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#dfe5e7] text-[17px] font-medium text-[#54656f]">
-                    {getInitial(conv.lead_name || formatPhone(conv.lead_phone))}
+                  <div
+                    className="flex size-[49px] shrink-0 items-center justify-center overflow-hidden rounded-full text-[17px] font-medium text-white"
+                    style={{ backgroundColor: avatarUrl ? undefined : avatarColor }}
+                  >
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt={leadName} className="h-full w-full object-cover" />
+                    ) : (
+                      getInitial(leadName)
+                    )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-1">
                       <span className="truncate text-[17px] font-medium text-[#111b21]">
-                        {conv.lead_name || formatPhone(conv.lead_phone)}
+                        {leadName || "Contato"}
                       </span>
                       <span className="shrink-0 text-[12px] text-[#667781]">
-                        {formatMessageTime(conv.last_message_at)}
+                        {formatMessageTime(conv.last_message_at || "")}
                       </span>
                     </div>
                     <div className="flex items-center gap-1">
                       <p className="truncate text-[14px] text-[#667781]">
-                        {conv.lastMessageSnippet}
+                        {conv.lastMessageSnippet || "Sem mensagens"}
                       </p>
                       {conv.ad_id && (
                         <span className="shrink-0 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-800">
@@ -397,7 +573,7 @@ export default function CrmPage({
                     </div>
                   </div>
                 </button>
-              ))
+              )})
             )}
           </div>
         </ScrollArea>
@@ -412,8 +588,11 @@ export default function CrmPage({
         ) : (
           <>
             <header className="flex shrink-0 items-center gap-3 border-none bg-[#f0f2f5] px-4 py-3 shadow-[0_1px_0_0_rgba(0,0,0,0.08)]">
-              <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#dfe5e7] text-[17px] font-medium text-[#54656f]">
-                {getInitial(selected.lead_name || formatPhone(selected.lead_phone))}
+              <div
+                className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full text-[17px] font-medium text-white"
+                style={{ backgroundColor: getAvatarColor(selected.lead_name || selected.lead_phone || "Lead") }}
+              >
+                {getInitial(selected.lead_name || formatPhone(selected.lead_phone || ""))}
               </div>
               <div className="min-w-0 flex-1">
                 <h2 className="font-bold text-zinc-900 dark:text-zinc-100">
@@ -474,30 +653,13 @@ export default function CrmPage({
                     </p>
                   </div>
                 ) : (
-                  displayMessages.map((msg) => (
-                    <MessageErrorBoundary
-                      key={msg.id}
-                      messageId={msg.id}
-                      fallback={
-                        <div className="flex w-full justify-center py-2">
-                          <span className="rounded bg-zinc-200 px-3 py-1.5 text-xs text-zinc-500">
-                            Mensagem indisponível
-                          </span>
-                        </div>
-                      }
-                    >
-                      <MessageBubble
-                        message={msg}
-                        leadInitial={getInitial(selected.lead_name || formatPhone(selected.lead_phone))}
-                      />
-                    </MessageErrorBoundary>
-                  ))
+                  renderedMessages
                 )}
                 <div ref={messagesEndRef} />
               </div>
             </ScrollArea>
 
-            <footer className="shrink-0 bg-[#f0f2f5] px-4 py-3">
+            <footer className="relative shrink-0 bg-[#f0f2f5] px-4 py-3">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -505,6 +667,18 @@ export default function CrmPage({
                 className="hidden"
                 onChange={handleFileSelect}
               />
+              {isEmojiOpen && (
+                <div className="absolute bottom-16 left-2 z-50">
+                  <EmojiPicker
+                    onEmojiClick={(emoji) => {
+                      setMessageInput((prev) => `${prev}${emoji.emoji}`);
+                      setIsEmojiOpen(false);
+                    }}
+                    height={360}
+                    width={320}
+                  />
+                </div>
+              )}
               <div className="flex items-end gap-2">
                 <Button
                   size="icon"
@@ -512,6 +686,7 @@ export default function CrmPage({
                   className="h-10 w-10 shrink-0 rounded-full text-[#54656f] hover:bg-[#e9edef] hover:text-[#111b21]"
                   disabled={pending || mediaPending}
                   aria-label="Emoji"
+                  onClick={() => setIsEmojiOpen((prev) => !prev)}
                 >
                   <Smile className="size-6" />
                 </Button>
@@ -525,55 +700,105 @@ export default function CrmPage({
                 >
                   <Paperclip className="size-6" />
                 </Button>
-                <Textarea
-                  placeholder="Digite uma mensagem"
-                  value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSend();
-                    }
-                  }}
-                  rows={2}
-                  className="min-h-[42px] flex-1 resize-none rounded-lg border-0 bg-white px-4 py-2.5 text-[15px] shadow-none placeholder:text-[#667781] focus-visible:ring-0"
-                  style={{ fontFamily: "'Segoe UI', 'Helvetica Neue', Arial, sans-serif" }}
-                  disabled={pending || mediaPending}
-                />
-                {messageInput.trim() ? (
-                  <Button
-                    size="icon"
-                    className="h-10 w-10 shrink-0 rounded-full bg-[#00a884] hover:bg-[#008f72]"
-                    onClick={handleSend}
-                    disabled={pending || mediaPending}
-                    aria-label="Enviar"
-                  >
-                    {pending || mediaPending ? (
-                      <Loader2 className="size-5 animate-spin text-white" />
-                    ) : (
+                {isRecording || pendingAudio ? (
+                  <div className="flex flex-1 items-center gap-3 rounded-full bg-white px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isRecording) {
+                          stopRecording("discard");
+                        } else {
+                          if (pendingAudio?.url) URL.revokeObjectURL(pendingAudio.url);
+                          setPendingAudio(null);
+                        }
+                      }}
+                      className="flex size-9 items-center justify-center rounded-full bg-red-50 text-red-500 hover:bg-red-100"
+                      aria-label="Descartar áudio"
+                    >
+                      <Trash2 className="size-5" />
+                    </button>
+                    <div className="flex flex-1 items-center gap-1">
+                      {Array.from({ length: 18 }).map((_, i) => {
+                        const baseLevel = isRecording ? audioLevel : 0.12;
+                        const level = Math.min(1, baseLevel * 3 + (i % 3) * 0.15);
+                        return (
+                          <span
+                            key={i}
+                            className="block w-1 rounded-full bg-[#00a884]/80 transition-all"
+                            style={{ height: `${8 + level * 18}px` }}
+                          />
+                        );
+                      })}
+                    </div>
+                    <span className="w-12 text-right text-sm text-[#667781]">
+                      {String(Math.floor((isRecording ? recordDuration : pendingAudio?.duration ?? 0) / 60)).padStart(2, "0")}:
+                      {String((isRecording ? recordDuration : pendingAudio?.duration ?? 0) % 60).padStart(2, "0")}
+                    </span>
+                    <Button
+                      size="icon"
+                      className="h-9 w-9 shrink-0 rounded-full bg-[#00a884] hover:bg-[#008f72]"
+                      onClick={() => {
+                        if (isRecording) {
+                          stopRecording("send");
+                        } else if (pendingAudio) {
+                          sendAudioFile(pendingAudio.file, pendingAudio.url, pendingAudio.duration);
+                        }
+                      }}
+                      disabled={pending || mediaPending}
+                      aria-label="Enviar áudio"
+                    >
                       <Send className="size-5 rotate-[-45deg] text-white" />
-                    )}
-                  </Button>
+                    </Button>
+                  </div>
                 ) : (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className={cn(
-                      "h-10 w-10 shrink-0 rounded-full",
-                      isRecording
-                        ? "bg-red-500 text-white hover:bg-red-600 hover:text-white"
-                        : "text-[#54656f] hover:bg-[#e9edef] hover:text-[#111b21]"
-                    )}
-                    onClick={handleVoiceRecord}
-                    disabled={pending || mediaPending}
-                    aria-label={isRecording ? "Parar gravação" : "Enviar áudio"}
-                  >
-                    {isRecording ? (
-                      <Square className="size-5 fill-current" />
+                  <>
+                    <Textarea
+                      placeholder="Digite uma mensagem"
+                      value={messageInput}
+                      onChange={(e) => setMessageInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSend();
+                        }
+                      }}
+                      rows={2}
+                      className="min-h-[42px] flex-1 resize-none rounded-lg border-0 bg-white px-4 py-2.5 text-[15px] shadow-none placeholder:text-[#667781] focus-visible:ring-0"
+                      style={{ fontFamily: "'Segoe UI', 'Helvetica Neue', Arial, sans-serif" }}
+                      disabled={pending || mediaPending}
+                    />
+                    {messageInput.trim() ? (
+                      <Button
+                        size="icon"
+                        className="h-10 w-10 shrink-0 rounded-full bg-[#00a884] hover:bg-[#008f72]"
+                        onClick={handleSend}
+                        disabled={pending || mediaPending}
+                        aria-label="Enviar"
+                      >
+                        {pending || mediaPending ? (
+                          <Loader2 className="size-5 animate-spin text-white" />
+                        ) : (
+                          <Send className="size-5 rotate-[-45deg] text-white" />
+                        )}
+                      </Button>
                     ) : (
-                      <Mic className="size-6" />
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className={cn(
+                          "h-10 w-10 shrink-0 rounded-full",
+                          isRecording
+                            ? "bg-red-500 text-white hover:bg-red-600 hover:text-white"
+                            : "text-[#54656f] hover:bg-[#e9edef] hover:text-[#111b21]"
+                        )}
+                        onClick={handleVoiceRecord}
+                        disabled={pending || mediaPending}
+                        aria-label={isRecording ? "Parar gravação" : "Enviar áudio"}
+                      >
+                        <Mic className="size-6" />
+                      </Button>
                     )}
-                  </Button>
+                  </>
                 )}
               </div>
             </footer>
