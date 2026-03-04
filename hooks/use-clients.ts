@@ -40,11 +40,19 @@ export function useAgencyBySlug(slug: string | null) {
       if (!slug) return null;
       const { data, error } = await supabase
         .from("agencies")
-        .select("id, name, slug, logo_url")
+        .select("id, name, slug, logo_url, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id")
         .eq("slug", slug)
         .single();
       if (error) throw error;
-      return data as { id: string; name: string; slug: string; logo_url: string | null };
+      return data as {
+        id: string;
+        name: string;
+        slug: string;
+        logo_url: string | null;
+        whatsapp_access_token: string | null;
+        whatsapp_phone_number_id: string | null;
+        whatsapp_waba_id: string | null;
+      };
     },
     enabled: !!slug,
   });

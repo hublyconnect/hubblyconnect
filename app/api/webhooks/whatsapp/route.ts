@@ -47,6 +47,18 @@ export async function POST(request: NextRequest) {
 
     if (statuses.length > 0) {
       console.log("Erro detalhado:", JSON.stringify(statuses[0].errors, null, 2));
+      for (const status of statuses) {
+        const waMessageId = status?.id ?? null;
+        const newStatus = status?.status ?? null;
+        if (!waMessageId || !newStatus) continue;
+        const { error: statusError } = await supabase
+          .from("whatsapp_messages")
+          .update({ status: newStatus } as never)
+          .eq("wa_message_id", waMessageId);
+        if (statusError) {
+          console.warn("[WA Webhook] Erro ao atualizar status:", statusError.message);
+        }
+      }
     }
 
     if (!value || !msg) {

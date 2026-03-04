@@ -10,6 +10,10 @@ export type SendWhatsAppReplyResult =
   | { ok: true; message: string }
   | { ok: false; error: string };
 
+export type CreateAgencyTagResult =
+  | { ok: true; message: string; tag: { id: string; name: string; color: string } }
+  | { ok: false; error: string };
+
 function normalizePhoneNumber(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   if (
@@ -24,23 +28,107 @@ function normalizePhoneNumber(phone: string): string {
   return digits;
 }
 
-function getWhatsAppAccessToken(
-  metadata: Record<string, unknown> | null
-): string | null {
-  if (!metadata) return null;
-  const whatsapp = metadata.whatsapp as Record<string, unknown> | undefined;
-  if (whatsapp?.access_token && typeof whatsapp.access_token === "string") {
-    return whatsapp.access_token;
-  }
-  const facebookAds = metadata.facebook_ads as Record<string, unknown> | undefined;
-  if (facebookAds?.access_token && typeof facebookAds.access_token === "string") {
-    return facebookAds.access_token;
-  }
-  return process.env.WHATSAPP_ACCESS_TOKEN ?? null;
-}
+type AgencyWhatsAppConfig = {
+  whatsapp_access_token: string | null;
+  whatsapp_phone_number_id: string | null;
+  whatsapp_waba_id: string | null;
+};
 
 type ConvRow = { id: string; client_id: string; business_phone_id: string; lead_phone: string };
 type ClientRow = { id: string; agency_id: string; metadata: unknown; whatsapp_business_phone_id: string | null };
+type AgencyRow = AgencyWhatsAppConfig & { id: string };
+
+export async function updateConversationTags(
+  conversationId: string,
+  tags: string[]
+): Promise<UpdateConversationTagsResult> {
+  const serverSupabase = await createServerSupabaseClient();
+  const {
+    data: { user },
+  } = await serverSupabase.auth.getUser();
+  if (!user) {
+    return { ok: false, error: "Não autenticado." };
+  }
+
+  const admin = createAdminClient();
+  const { data: convData, error: convError } = await admin
+    .from("whatsapp_conversations")
+    .select("id, client_id")
+    .eq("id", conversationId)
+    .single();
+  const conversation = convData as { id: string; client_id: string } | null;
+  if (convError || !conversation) {
+    return { ok: false, error: "Conversa não encontrada." };
+  }
+
+  const { data: profile } = await serverSupabase
+    .from("profiles")
+    .select("agency_id, role")
+    .eq("id", user.id)
+    .single();
+
+  const { data: clientData } = await admin
+    .from("clients")
+    .select("id, agency_id")
+    .eq("id", conversation.client_id)
+    .single();
+  const client = clientData as { id: string; agency_id: string } | null;
+
+  if (!profile || !client || client.agency_id !== profile.agency_id) {
+    return { ok: false, error: "Sem permissão para esta conversa." };
+  }
+
+  const { error: updateError } = await admin
+    .from("whatsapp_conversations")
+    .update({ tags } as never)
+    .eq("id", conversationId);
+  if (updateError) {
+    return { ok: false, error: updateError.message };
+  }
+  return { ok: true, message: "Tags atualizadas." };
+}
+
+export async function createAgencyTag(
+  name: string,
+  color: string
+): Promise<CreateAgencyTagResult> {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return { ok: false, error: "Nome da tag é obrigatório." };
+  }
+
+  const serverSupabase = await createServerSupabaseClient();
+  const {
+    data: { user },
+  } = await serverSupabase.auth.getUser();
+  if (!user) {
+    return { ok: false, error: "Não autenticado." };
+  }
+
+  const { data: profile } = await serverSupabase
+    .from("profiles")
+    .select("agency_id")
+    .eq("id", user.id)
+    .single();
+
+  const agencyId = profile?.agency_id;
+  if (!agencyId) {
+    return { ok: false, error: "Agência não encontrada." };
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("agency_tags")
+    .insert({ name: trimmed, color, agency_id: agencyId } as never)
+    .select("id, name, color")
+    .single();
+
+  if (error || !data) {
+    return { ok: false, error: error?.message ?? "Falha ao criar tag." };
+  }
+
+  return { ok: true, message: "Tag criada.", tag: data as { id: string; name: string; color: string } };
+}
 
 export async function sendWhatsAppReply(
   conversationId: string,
@@ -89,16 +177,17 @@ export async function sendWhatsAppReply(
     return { ok: false, error: "Sem permissão para esta conversa." };
   }
 
-  const token = getWhatsAppAccessToken(
-    (client.metadata ?? {}) as Record<string, unknown>
-  );
-  if (!token) {
-    return { ok: false, error: "WhatsApp não conectado para este cliente." };
-  }
+  const { data: agencyData } = await admin
+    .from("agencies")
+    .select("id, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id")
+    .eq("id", profile.agency_id)
+    .single();
+  const agency = agencyData as AgencyRow | null;
 
-  const sendPhoneId = client.whatsapp_business_phone_id ?? conversation.business_phone_id;
-  if (!sendPhoneId) {
-    return { ok: false, error: "WhatsApp Business Phone ID não configurado para este cliente." };
+  const token = agency?.whatsapp_access_token ?? null;
+  const sendPhoneId = agency?.whatsapp_phone_number_id ?? null;
+  if (!token || !sendPhoneId) {
+    return { ok: false, error: "Configure seu WhatsApp para enviar mensagens." };
   }
 
   const normalizedPhone = normalizePhoneNumber(conversation.lead_phone);
@@ -169,6 +258,10 @@ export type SendWhatsAppMediaResult =
   | { ok: true; message: string }
   | { ok: false; error: string };
 
+export type UpdateConversationTagsResult =
+  | { ok: true; message: string }
+  | { ok: false; error: string };
+
 export type MediaType = "image" | "audio" | "document";
 
 const BUCKET_CHAT_MEDIA = "chat-media";
@@ -226,16 +319,17 @@ export async function sendWhatsAppMedia(
     return { ok: false, error: "Sem permissão para esta conversa." };
   }
 
-  const sendPhoneId = client.whatsapp_business_phone_id ?? conversation.business_phone_id;
-  if (!sendPhoneId) {
-    return { ok: false, error: "WhatsApp Business Phone ID não configurado para este cliente." };
-  }
+  const { data: agencyData } = await admin
+    .from("agencies")
+    .select("id, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id")
+    .eq("id", profile.agency_id)
+    .single();
+  const agency = agencyData as AgencyRow | null;
 
-  const token = getWhatsAppAccessToken(
-    (client.metadata ?? {}) as Record<string, unknown>
-  );
-  if (!token) {
-    return { ok: false, error: "WhatsApp não conectado para este cliente." };
+  const token = agency?.whatsapp_access_token ?? null;
+  const sendPhoneId = agency?.whatsapp_phone_number_id ?? null;
+  if (!token || !sendPhoneId) {
+    return { ok: false, error: "Configure seu WhatsApp para enviar mensagens." };
   }
 
   const ext = file.name.split(".").pop() || (mediaType === "audio" ? "ogg" : "bin");

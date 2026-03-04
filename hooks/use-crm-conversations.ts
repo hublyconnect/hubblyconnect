@@ -14,6 +14,7 @@ export type CrmConversation = {
   lead_name: string | null;
   last_message_at: string;
   status: string;
+  tags?: string[] | null;
   ad_id: string | null;
   campaign_id: string | null;
   created_at: string;
@@ -51,7 +52,8 @@ export function useCrmConversations() {
             `
             *,
             clients(id, name, whatsapp_business_phone_id),
-            whatsapp_messages(sender_type, message_body, created_at)
+            whatsapp_messages(sender_type, message_body, created_at),
+            tags
           `
           )
           .order("last_message_at", { ascending: false });

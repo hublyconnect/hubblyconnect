@@ -152,7 +152,59 @@ export default function ConfiguracoesPage({
             </Card>
           </TabsContent>
 
-          <TabsContent value="whatsapp">
+          <TabsContent value="whatsapp" className="space-y-6">
+            <Card className="rounded-2xl">
+              <CardHeader>
+                <CardTitle>Configurações do WhatsApp (Agência)</CardTitle>
+                <CardDescription>
+                  Configure o token e o Phone Number ID usados para enviar mensagens
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {agency ? (
+                  <form onSubmit={handleAgencySubmit} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="wa-access-token">Access Token</Label>
+                      <Input
+                        id="wa-access-token"
+                        name="whatsapp_access_token"
+                        defaultValue={agency.whatsapp_access_token ?? ""}
+                        placeholder="Token de acesso do WhatsApp Business"
+                        disabled={pending}
+                        className="rounded-lg"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="wa-phone-id">Phone Number ID</Label>
+                      <Input
+                        id="wa-phone-id"
+                        name="whatsapp_phone_number_id"
+                        defaultValue={agency.whatsapp_phone_number_id ?? ""}
+                        placeholder="Ex: 1063335686858744"
+                        disabled={pending}
+                        className="rounded-lg"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="wa-waba-id">WABA ID</Label>
+                      <Input
+                        id="wa-waba-id"
+                        name="whatsapp_waba_id"
+                        defaultValue={agency.whatsapp_waba_id ?? ""}
+                        placeholder="Ex: 1078459368673714"
+                        disabled={pending}
+                        className="rounded-lg"
+                      />
+                    </div>
+                    <Button type="submit" disabled={pending} className="rounded-lg">
+                      {pending ? <Loader2 className="size-4 animate-spin" /> : "Salvar configurações"}
+                    </Button>
+                  </form>
+                ) : (
+                  <Skeleton className="h-32 w-full" />
+                )}
+              </CardContent>
+            </Card>
             <WhatsAppBusinessSection agencySlug={slug} agencyId={agency?.id ?? null} queryClient={queryClient} />
           </TabsContent>
         </Tabs>

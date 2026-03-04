@@ -13,6 +13,7 @@ import {
   MessageCircle,
   BadgeAlert,
   Loader2,
+  Check,
   CheckCheck,
   Paperclip,
   Mic,
@@ -27,7 +28,8 @@ import EmojiPicker from "emoji-picker-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCrmConversations } from "@/hooks/use-crm-conversations";
 import { useCrmMessages, type CrmMessage } from "@/hooks/use-crm-messages";
-import { sendWhatsAppReply, sendWhatsAppMedia } from "./actions";
+import { useAgencyTags } from "@/hooks/use-agency-tags";
+import { sendWhatsAppReply, sendWhatsAppMedia, updateConversationTags, createAgencyTag } from "./actions";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -105,6 +107,27 @@ function getAvatarColor(seed: string): string {
   return `hsl(${hue} 60% 55%)`;
 }
 
+function darkenHex(hex: string, amount: number): string {
+  const safe = hex.replace("#", "");
+  if (safe.length !== 6) return "#1f2937";
+  const num = parseInt(safe, 16);
+  const r = Math.max(0, (num >> 16) - amount);
+  const g = Math.max(0, ((num >> 8) & 0xff) - amount);
+  const b = Math.max(0, (num & 0xff) - amount);
+  return `#${(r << 16 | g << 8 | b).toString(16).padStart(6, "0")}`;
+}
+
+const TAG_COLOR_PRESETS = [
+  "#bfdbfe",
+  "#fde68a",
+  "#bbf7d0",
+  "#fecaca",
+  "#ddd6fe",
+  "#fbcfe8",
+  "#c7d2fe",
+  "#bae6fd",
+];
+
 function getDateLabel(iso: string): string {
   if (!iso) return "Data desconhecida";
   const d = new Date(iso);
@@ -127,15 +150,21 @@ export default function CrmPage({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [messageInput, setMessageInput] = useState("");
+  const [showChat, setShowChat] = useState(false);
   const [pending, startTransition] = useTransition();
   const [mediaPending, setMediaPending] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [tagMenuOpen, setTagMenuOpen] = useState(false);
+  const [newTagName, setNewTagName] = useState("");
+  const [newTagColor, setNewTagColor] = useState(TAG_COLOR_PRESETS[0]);
+  const [isCreatingTag, setIsCreatingTag] = useState(false);
   const [recordDuration, setRecordDuration] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
   const [pendingAudio, setPendingAudio] = useState<{ file: File; url: string; duration: number } | null>(null);
   const [isEmojiOpen, setIsEmojiOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recordStartRef = useRef<number | null>(null);
@@ -158,6 +187,10 @@ export default function CrmPage({
     error: convErrorDetail,
     refetch: refetchConversations,
   } = useCrmConversations();
+  const {
+    data: agencyTags,
+    isLoading: tagsLoading,
+  } = useAgencyTags();
   const {
     data: messages,
     isLoading: msgLoading,
@@ -196,10 +229,18 @@ export default function CrmPage({
   });
 
   const selected = (conversations ?? []).find((c) => c.id === selectedId);
-  const showChat = Boolean(selectedId && selected);
+  const hasSelection = Boolean(selectedId && selected);
   const leadInitial = selected
     ? getInitial(selected.lead_name || formatPhone(selected.lead_phone || ""))
     : "?";
+  const selectedTags = (selected?.tags ?? []) as string[];
+  const tagColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    (agencyTags ?? []).forEach((tag) => {
+      map.set(tag.name, tag.color);
+    });
+    return map;
+  }, [agencyTags]);
 
   const renderedMessages = useMemo(() => {
     let lastDateKey = "";
@@ -236,6 +277,35 @@ export default function CrmPage({
     return nodes;
   }, [displayMessages, leadInitial]);
 
+  const toggleTag = async (tag: string) => {
+    if (!selectedId) return;
+    const nextTags = selectedTags.includes(tag)
+      ? selectedTags.filter((t) => t !== tag)
+      : [...selectedTags, tag];
+    const result = await updateConversationTags(selectedId, nextTags);
+    if (result.ok) {
+      queryClient.invalidateQueries({ queryKey: ["crm-conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["agency-tags"] });
+      toast.success(result.message);
+    } else {
+      toast.error(result.error);
+    }
+  };
+
+  const handleCreateTag = async () => {
+    if (!newTagName.trim()) return;
+    setIsCreatingTag(true);
+    const result = await createAgencyTag(newTagName, newTagColor);
+    setIsCreatingTag(false);
+    if (result.ok) {
+      setNewTagName("");
+      queryClient.invalidateQueries({ queryKey: ["agency-tags"] });
+      toast.success(result.message);
+    } else {
+      toast.error(result.error);
+    }
+  };
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [displayMessages]);
@@ -249,6 +319,7 @@ export default function CrmPage({
     if (mediaRecorderRef.current?.state === "recording") {
       mediaRecorderRef.current.stop();
     }
+    setShowChat(Boolean(selectedId));
   }, [selectedId]);
 
   const handleSend = () => {
@@ -385,6 +456,9 @@ export default function CrmPage({
         if (e.data.size) chunksRef.current.push(e.data);
       };
       const audioContext = new AudioContext();
+      if (audioContext.state === "suspended") {
+        audioContext.resume().catch(() => {});
+      }
       const analyser = audioContext.createAnalyser();
       const source = audioContext.createMediaStreamSource(stream);
       source.connect(analyser);
@@ -471,9 +545,14 @@ export default function CrmPage({
   }, [isRecording]);
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] min-h-[500px] gap-0 overflow-hidden rounded-xl border border-[#e9edef] bg-white shadow-sm">
+    <div className="flex h-[100dvh] max-h-[calc(100vh-80px)] min-h-[500px] flex-col gap-0 overflow-hidden rounded-xl border border-[#e9edef] bg-white shadow-sm md:flex-row">
       {/* Sidebar - WhatsApp Web style */}
-      <aside className="flex w-80 shrink-0 flex-col border-r border-[#e9edef] bg-white">
+      <aside
+        className={cn(
+          "flex w-full shrink-0 flex-col border-r border-[#e9edef] bg-white md:w-80",
+          showChat ? "hidden sm:flex" : "flex"
+        )}
+      >
         <div className="border-b border-[#e9edef] bg-[#f0f2f5] p-2">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#667781]" />
@@ -536,7 +615,10 @@ export default function CrmPage({
                 <button
                   key={conv.id}
                   type="button"
-                  onClick={() => setSelectedId(conv.id)}
+                  onClick={() => {
+                    setSelectedId(conv.id);
+                    setShowChat(true);
+                  }}
                   className={cn(
                     "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-[#f5f6f6]",
                     selectedId === conv.id && "bg-[#f0f2f5]"
@@ -553,11 +635,11 @@ export default function CrmPage({
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="truncate text-[17px] font-medium text-[#111b21]">
+                    <div className="flex items-center gap-2">
+                      <span className="min-w-0 flex-1 truncate text-[17px] font-medium text-[#111b21]">
                         {leadName || "Contato"}
                       </span>
-                      <span className="shrink-0 text-[12px] text-[#667781]">
+                      <span className="shrink-0 min-w-[56px] whitespace-nowrap text-right text-[12px] text-[#667781]">
                         {formatMessageTime(conv.last_message_at || "")}
                       </span>
                     </div>
@@ -571,6 +653,22 @@ export default function CrmPage({
                         </span>
                       )}
                     </div>
+                    {Array.isArray(conv.tags) && conv.tags.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {conv.tags.slice(0, 3).map((tag) => {
+                          const color = tagColorMap.get(tag) ?? "#e5e7eb";
+                          const textColor = darkenHex(color, 90);
+                          return (
+                          <span
+                            key={tag}
+                            className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                            style={{ backgroundColor: color, color: textColor }}
+                          >
+                            {tag}
+                          </span>
+                        )})}
+                      </div>
+                    )}
                   </div>
                 </button>
               )})
@@ -580,14 +678,27 @@ export default function CrmPage({
       </aside>
 
       {/* Main Chat */}
-      <main className="flex flex-1 flex-col min-w-0">
-        {!selected || !showChat ? (
+      <main
+        className={cn(
+          "flex flex-1 min-w-0 flex-col",
+          showChat ? "flex" : "hidden sm:flex"
+        )}
+      >
+        {!selected || !hasSelection ? (
           <div className="flex flex-1 items-center justify-center p-8 text-center text-zinc-500">
             Selecione uma conversa
           </div>
         ) : (
           <>
-            <header className="flex shrink-0 items-center gap-3 border-none bg-[#f0f2f5] px-4 py-3 shadow-[0_1px_0_0_rgba(0,0,0,0.08)]">
+            <header className="relative flex shrink-0 items-center gap-3 border-none bg-[#f0f2f5] px-4 py-3 shadow-[0_1px_0_0_rgba(0,0,0,0.08)]">
+              <button
+                type="button"
+                onClick={() => setShowChat(false)}
+                className="mr-1 flex size-9 items-center justify-center rounded-full text-[#54656f] hover:bg-[#e9edef] sm:hidden"
+                aria-label="Voltar para conversas"
+              >
+                <span className="text-lg">←</span>
+              </button>
               <div
                 className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full text-[17px] font-medium text-white"
                 style={{ backgroundColor: getAvatarColor(selected.lead_name || selected.lead_phone || "Lead") }}
@@ -606,6 +717,23 @@ export default function CrmPage({
                     </span>
                   )}
                 </p>
+                {selectedTags.length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {selectedTags.map((tag) => {
+                      const color = tagColorMap.get(tag) ?? "#e5e7eb";
+                      const textColor = darkenHex(color, 90);
+                      return (
+                        <span
+                          key={tag}
+                          className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                          style={{ backgroundColor: color, color: textColor }}
+                        >
+                          {tag}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
               <span
                 className={cn(
@@ -615,6 +743,89 @@ export default function CrmPage({
               >
                 {selected.status === "open" ? "Aberto" : selected.status}
               </span>
+              <div className="relative">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-2 h-8 border-zinc-200 text-zinc-600 hover:bg-zinc-100"
+                  onClick={() => setTagMenuOpen((prev) => !prev)}
+                >
+                  Tags
+                </Button>
+                {tagMenuOpen && (
+                  <div className="absolute right-0 top-10 z-50 w-44 rounded-lg border border-zinc-200 bg-white p-2 shadow-lg">
+                    <p className="px-2 py-1 text-xs font-semibold text-zinc-500">Selecionar tags</p>
+                    <div className="flex flex-col gap-1">
+                      {(agencyTags ?? []).length === 0 && (
+                        <p className="px-2 py-1 text-xs text-zinc-400">Nenhuma tag criada</p>
+                      )}
+                      {(agencyTags ?? []).map((tag) => {
+                        const active = selectedTags.includes(tag.name);
+                        return (
+                          <label
+                            key={tag.id}
+                            className={cn(
+                              "flex items-center justify-between rounded-md px-2 py-1 text-xs font-medium cursor-pointer",
+                              active ? "bg-zinc-100 text-zinc-800" : "hover:bg-zinc-50 text-zinc-600"
+                            )}
+                          >
+                            <span
+                              className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                              style={{
+                                backgroundColor: tag.color,
+                                color: darkenHex(tag.color, 90),
+                              }}
+                            >
+                              {tag.name}
+                            </span>
+                            <input
+                              type="checkbox"
+                              checked={active}
+                              onChange={() => toggleTag(tag.name)}
+                              className="h-3 w-3 accent-zinc-700"
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-2 border-t border-zinc-100 pt-2">
+                      <p className="px-2 pb-1 text-[11px] font-semibold text-zinc-400">Criar nova tag</p>
+                      <Input
+                        value={newTagName}
+                        onChange={(e) => setNewTagName(e.target.value)}
+                        placeholder="Nome da tag"
+                        className="h-8 text-xs"
+                      />
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {TAG_COLOR_PRESETS.map((color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            onClick={() => setNewTagColor(color)}
+                            className={cn(
+                              "h-6 w-6 rounded-full border",
+                              newTagColor === color ? "border-zinc-700" : "border-zinc-200"
+                            )}
+                            style={{ backgroundColor: color }}
+                            aria-label={`Cor ${color}`}
+                          />
+                        ))}
+                      </div>
+                      <Button
+                        size="sm"
+                        className="mt-2 w-full"
+                        onClick={handleCreateTag}
+                        disabled={!newTagName.trim() || isCreatingTag}
+                      >
+                        Criar nova tag
+                      </Button>
+                      {tagsLoading && (
+                        <p className="mt-2 text-[10px] text-zinc-400">Atualizando tags...</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </header>
 
             <ScrollArea
@@ -659,7 +870,7 @@ export default function CrmPage({
               </div>
             </ScrollArea>
 
-            <footer className="relative shrink-0 bg-[#f0f2f5] px-4 py-3">
+            <footer className="relative shrink-0 bg-[#f0f2f5] px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -671,7 +882,13 @@ export default function CrmPage({
                 <div className="absolute bottom-16 left-2 z-50">
                   <EmojiPicker
                     onEmojiClick={(emoji) => {
-                      setMessageInput((prev) => `${prev}${emoji.emoji}`);
+                      setMessageInput((prev) => {
+                        const next = `${prev}${emoji.emoji}`;
+                        return next;
+                      });
+                      requestAnimationFrame(() => {
+                        textAreaRef.current?.focus();
+                      });
                       setIsEmojiOpen(false);
                     }}
                     height={360}
@@ -724,7 +941,7 @@ export default function CrmPage({
                         return (
                           <span
                             key={i}
-                            className="block w-1 rounded-full bg-[#00a884]/80 transition-all"
+                            className="block w-1 rounded-full bg-emerald-500/80 transition-all dark:bg-emerald-400/80"
                             style={{ height: `${8 + level * 18}px` }}
                           />
                         );
@@ -752,7 +969,8 @@ export default function CrmPage({
                   </div>
                 ) : (
                   <>
-                    <Textarea
+                <Textarea
+                  ref={textAreaRef}
                       placeholder="Digite uma mensagem"
                       value={messageInput}
                       onChange={(e) => setMessageInput(e.target.value)}
@@ -987,9 +1205,17 @@ function MessageBubble({ message, leadInitial }: { message: CrmMessage; leadInit
               {formatBubbleTime(createdAt)}
             </span>
             {isAgent && mediaType !== "audio" && (
-              <CheckCheck
-                className={cn("size-3.5 shrink-0", isRead ? "text-[#53bdeb]" : "text-[#8696a0]")}
-              />
+              <>
+                {status === "sent" && (
+                  <Check className="size-3.5 shrink-0 text-[#8696a0]" />
+                )}
+                {status === "delivered" && (
+                  <CheckCheck className="size-3.5 shrink-0 text-[#8696a0]" />
+                )}
+                {status === "read" && (
+                  <CheckCheck className="size-3.5 shrink-0 text-[#53bdeb]" />
+                )}
+              </>
             )}
           </div>
         )}

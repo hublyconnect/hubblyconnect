@@ -26,6 +26,9 @@ export async function updateAgencyAction(
 
   const name = (formData.get("name") as string)?.trim();
   const slug = (formData.get("slug") as string)?.trim().toLowerCase().replace(/\s+/g, "-");
+  const whatsapp_access_token = (formData.get("whatsapp_access_token") as string)?.trim() || null;
+  const whatsapp_phone_number_id = (formData.get("whatsapp_phone_number_id") as string)?.trim() || null;
+  const whatsapp_waba_id = (formData.get("whatsapp_waba_id") as string)?.trim() || null;
   let logo_url = (formData.get("logo_url") as string)?.trim() || null;
   const logoFile = formData.get("logo") as File | null;
   if (logoFile?.size && logoFile.size > 0) {
@@ -44,7 +47,15 @@ export async function updateAgencyAction(
 
   const { error } = await supabase
     .from("agencies")
-    .update({ name, slug, logo_url, updated_at: new Date().toISOString() })
+    .update({
+      name,
+      slug,
+      logo_url,
+      whatsapp_access_token,
+      whatsapp_phone_number_id,
+      whatsapp_waba_id,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", profile.agency_id);
   if (error) return { ok: false, error: error.message };
   revalidatePath(`/dashboard/${agencySlug}/configuracoes`);
